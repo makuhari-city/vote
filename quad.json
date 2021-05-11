@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "frac",
+  "params": {
+    "voters": [
+      { "dog": 1.0, "cat": 1.0, "bat": 4.0 },
+      { "dog": 16.0 },
+      { "cat": 1.0, "bat": 9.0 }
+    ],
+	"quadratic":true
+  }
+}
