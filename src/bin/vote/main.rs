@@ -22,7 +22,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .service(api)
     })
-    .bind("0.0.0.0:8080")?
+    .bind("0.0.0.0:8081")?
     .run()
     .await
 }
@@ -63,7 +63,7 @@ struct FracRPCParamsFormat {
     voters: Vec<HashMap<String, f64>>,
 }
 
-#[post("api/")]
+#[post("rpc/")]
 async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
     let rpc = data.into_inner();
 
