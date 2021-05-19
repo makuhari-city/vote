@@ -60,7 +60,7 @@ enum JsonRPCResponse {
 struct FracRPCParamsFormat {
     normalize: Option<bool>,
     quadratic: Option<bool>,
-    voters: Vec<HashMap<String, f64>>,
+    voters: HashMap<String, HashMap<String, f64>>,
 }
 
 #[post("rpc/")]
@@ -96,7 +96,7 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
             let voters_ref = data
                 .voters
                 .iter()
-                .map(|vts| vts.iter().map(|(to, v)| (to.as_ref(), *v)).collect())
+                .map(|(_, vts)| vts.iter().map(|(to, v)| (to.as_ref(), *v)).collect())
                 .collect();
             let mut frac = FractionalVoting::new(voters_ref);
             if let Some(b) = data.quadratic {
