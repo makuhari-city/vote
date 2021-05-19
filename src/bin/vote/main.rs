@@ -57,7 +57,7 @@ enum JsonRPCResponse {
 }
 
 #[derive(Deserialize, Serialize)]
-struct FracRPCParamsFormat {
+struct RPCParamsFormat {
     normalize: Option<bool>,
     quadratic: Option<bool>,
     voters: HashMap<String, HashMap<String, f64>>,
@@ -69,9 +69,10 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
 
     let result = match rpc.method.as_ref() {
         "liquid" => {
-            let voters: HashMap<String, HashMap<String, f64>> =
+            let params: RPCParamsFormat =
                 serde_json::from_value(rpc.params).expect("FIX this easy error");
-            let voters_ref = voters
+            let voters_ref = params
+                .voters
                 .iter()
                 .map(|(v, vts)| {
                     (
@@ -90,19 +91,19 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
             json!(result)
         }
         "frac" => {
-            let data: FracRPCParamsFormat =
+            let params: RPCParamsFormat =
                 serde_json::from_value(rpc.params).expect("fix this easy issue");
 
-            let voters_ref = data
+            let voters_ref = params
                 .voters
                 .iter()
                 .map(|(_, vts)| vts.iter().map(|(to, v)| (to.as_ref(), *v)).collect())
                 .collect();
             let mut frac = FractionalVoting::new(voters_ref);
-            if let Some(b) = data.quadratic {
+            if let Some(b) = params.quadratic {
                 frac.quadratic(b);
             }
-            if let Some(b) = data.normalize {
+            if let Some(b) = params.normalize {
                 frac.normalize(b);
             }
             json!(frac.calculate())
