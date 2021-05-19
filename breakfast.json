@@ -1,23 +1,25 @@
 {
-	"jsonrpc": "2.0",
-	"id": 0,
-	"method": "liquid",
-	"params": {
-		"minori": {
-			"yasushi": 0.1,
-			"ray": 0.1,
-			"rice": 0.1,
-			"bread": 0.7
-		},
-		"yasushi": {
-			"minori": 0.2,
-			"ray": 0.3,
-			"rice": 0.5
-		},
-		"ray": {
-			"minori": 0.4,
-			"yasushi": 0.4,
-			"bread":0.2
-		}
-	}
+  "jsonrpc": "2.0",
+  "id": 0,
+  "method": "liquid",
+  "params": {
+    "voters": {
+      "minori": {
+        "yasushi": 0.1,
+        "ray": 0.1,
+        "rice": 0.1,
+        "bread": 0.7
+      },
+      "yasushi": {
+        "minori": 0.2,
+        "ray": 0.3,
+        "rice": 0.5
+      },
+      "ray": {
+        "minori": 0.4,
+        "yasushi": 0.4,
+        "bread": 0.2
+      }
+    }
+  }
 }

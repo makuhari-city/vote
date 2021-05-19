@@ -1,7 +1,5 @@
 use actix_cors::Cors;
-use actix_web::{
-    middleware, post, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
-};
+use actix_web::{middleware, post, web, App, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -71,22 +69,30 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
         "liquid" => {
             let params: RPCParamsFormat =
                 serde_json::from_value(rpc.params).expect("FIX this easy error");
-            let voters_ref = params
-                .voters
-                .iter()
-                .map(|(v, vts)| {
-                    (
-                        v.as_ref(),
-                        vts.iter()
-                            .map(|(to, v)| (to.as_ref(), *v))
-                            .collect::<HashMap<&str, f64>>(),
-                    )
-                })
-                .collect();
-            let liq = LiquidDemocracy::new(voters_ref);
 
-            // TODO: this should block_on ?
-            let result = liq.calculate();
+            let result = tokio::spawn(async move {
+                let voters_ref = params
+                    .voters
+                    .iter()
+                    .map(|(v, vts)| {
+                        (
+                            v.as_ref(),
+                            vts.iter()
+                                .map(|(to, v)| (to.as_ref(), *v))
+                                .collect::<HashMap<&str, f64>>(),
+                        )
+                    })
+                    .collect();
+                let liq = LiquidDemocracy::new(voters_ref);
+                let (result, influence) = liq.calculate();
+                let r: HashMap<String, f64> =
+                    result.iter().map(|(v, f)| (v.to_string(), *f)).collect();
+                let inf: HashMap<String, f64> =
+                    influence.iter().map(|(u, f)| (u.to_string(), *f)).collect();
+                (r, inf)
+            })
+            .await
+            .unwrap();
 
             json!(result)
         }

@@ -1,4 +1,4 @@
-use crate::{fractional::square_root_votes, normalize_votes, Ordf64};
+use crate::{fractional::square_root_votes, normalize_votes};
 use ndarray::{concatenate, s, Array, Array2, Axis};
 use std::collections::{BTreeSet, HashMap};
 
