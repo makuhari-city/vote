@@ -3,6 +3,7 @@ use actix_web::{middleware, post, web, App, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use tokio::task::spawn_blocking;
 use vote::{fractional::FractionalVoting, liquid_democracy::LiquidDemocracy};
 
 #[actix_web::main]
@@ -70,7 +71,8 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
             let params: RPCParamsFormat =
                 serde_json::from_value(rpc.params).expect("FIX this easy error");
 
-            let result = tokio::spawn(async move {
+            // This is computationally heavy so it goes to a dedicated thread
+            let result = spawn_blocking(move || {
                 let voters_ref = params
                     .voters
                     .iter()
