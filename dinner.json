@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "borda",
+  "params": {
+    "voters": {
+      "yasushi":["chicken", "beef", "pork"],
+      "minori": ["beef", "chicken", "pork"],
+      "ray": ["pork", "beef", "chicken"],
+	  "sola":["pork", "chicken", "beef"]
+	}
+  }
+}

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 mod approval;
+pub mod borda;
 mod fptp;
 pub mod fractional;
 pub mod liquid_democracy;

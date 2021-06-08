@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use tokio::task::spawn_blocking;
-use vote::{fractional::FractionalVoting, liquid_democracy::LiquidDemocracy};
+use vote::{borda::BordaCount, fractional::FractionalVoting, liquid_democracy::LiquidDemocracy};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -62,6 +62,11 @@ struct RPCParamsFormat {
     voters: HashMap<String, HashMap<String, f64>>,
 }
 
+#[derive(Deserialize, Serialize)]
+struct RPCParamsFormatOrdinal {
+    voters: HashMap<String, Vec<String>>,
+}
+
 #[post("rpc/")]
 async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
     let rpc = data.into_inner();
@@ -69,8 +74,7 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
     let result = match rpc.method.as_ref() {
         "liquid" => {
             let params: RPCParamsFormat =
-                serde_json::from_value(rpc.params).expect("FIX this easy error");
-
+                serde_json::from_value(rpc.params).expect("Fix this easy error");
             // This is computationally heavy so it goes to a dedicated thread
             let result = spawn_blocking(move || {
                 let voters_ref = params
@@ -100,8 +104,7 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
         }
         "frac" => {
             let params: RPCParamsFormat =
-                serde_json::from_value(rpc.params).expect("fix this easy issue");
-
+                serde_json::from_value(rpc.params).expect("Fix this easy error");
             let voters_ref = params
                 .voters
                 .iter()
@@ -115,6 +118,19 @@ async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
                 frac.normalize(b);
             }
             json!(frac.calculate())
+        }
+        "borda" => {
+            let params: RPCParamsFormatOrdinal =
+                serde_json::from_value(rpc.params).expect("Fix this easy error");
+
+            let voter_ref: Vec<Vec<&str>> = params
+                .voters
+                .iter()
+                .map(|(_, votes)| votes.iter().map(|v| v.as_ref()).collect())
+                .collect();
+
+            let borda = BordaCount::new(voter_ref);
+            json!(borda.calculate())
         }
         _ => {
             let error = "method not found";
