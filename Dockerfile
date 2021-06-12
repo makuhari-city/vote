@@ -27,7 +27,7 @@ RUN groupadd $APP_USER \
     && useradd -g $APP_USER $APP_USER \
     && mkdir -p ${APP}
 
-COPY --from=builder /vote/target/release/cityio ${APP}/vote
+COPY --from=builder /vote/target/release/vote ${APP}/vote
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 

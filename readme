@@ -1,0 +1,8 @@
+build instructions using docker:
+
+cd vote # to this directory
+docker build -t vote
+
+after building, you can
+
+docker run -p 8081:8081 --net=host vote
