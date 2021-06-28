@@ -1,153 +1,100 @@
 use actix_cors::Cors;
-use actix_web::{middleware, post, web, App, HttpServer, Responder};
-use serde::{Deserialize, Serialize};
+use actix_web::{client::Client, get, middleware, post, web, App, HttpServer, Responder};
+use futures::future::join_all;
+use log::info;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use tokio::task::spawn_blocking;
-use vote::{borda::BordaCount, fractional::FractionalVoting, liquid_democracy::LiquidDemocracy};
+use std::sync::Mutex;
+use vote::{TopicInfo, VoteMethodResult};
+
+type ModuleMap = Mutex<HashMap<String, String>>;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "actix_web=trace,actix_redis=trace,vote=debug");
     env_logger::init();
 
-    HttpServer::new(|| {
+    let modules: web::Data<ModuleMap> = web::Data::new(Mutex::new(HashMap::new()));
+
+    HttpServer::new(move || {
         // TODO: change this
         let cors = Cors::permissive();
 
         App::new()
-            .app_data(web::JsonConfig::default().limit(1024 * 1024 * 10)) // 10mb.... really?
             .wrap(middleware::Logger::default())
             .wrap(cors)
+            .app_data(modules.clone())
+            .service(hello)
             .service(api)
+            .service(add_module)
+            .service(get_modules)
+            .service(dummy_info)
     })
-    .bind("0.0.0.0:8081")?
+    .bind("0.0.0.0:8100")?
     .run()
     .await
 }
 
-#[derive(Deserialize, Serialize)]
-struct JsonRPCRequest {
-    jsonrpc: String,
-    id: Value,
-    params: Value,
-    method: String,
-}
-
-#[derive(Deserialize, Serialize)]
-struct JsonRPCResponseSuccess {
-    jsonrpc: String,
-    id: Value,
-    result: Value,
-}
-
-#[derive(Deserialize, Serialize)]
-struct JsonRPCResponseError {
-    jsonrpc: String,
-    id: Value,
-    error: String,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(untagged)]
-enum JsonRPCResponse {
-    Success(JsonRPCResponseSuccess),
-    Error(JsonRPCResponseError),
-}
-
-#[derive(Deserialize, Serialize)]
-struct RPCParamsFormat {
-    normalize: Option<bool>,
-    quadratic: Option<bool>,
-    voters: HashMap<String, HashMap<String, f64>>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct RPCParamsFormatOrdinal {
-    voters: HashMap<String, Vec<String>>,
-}
-
 #[post("rpc/")]
-async fn api<'a, 'de>(data: web::Json<JsonRPCRequest>) -> impl Responder {
-    let rpc = data.into_inner();
+async fn api(modules: web::Data<ModuleMap>, topic: web::Json<TopicInfo>) -> impl Responder {
+    let topic = topic.into_inner();
+    let modules = modules.lock().unwrap();
 
-    let result = match rpc.method.as_ref() {
-        "liquid" => {
-            let params: RPCParamsFormat =
-                serde_json::from_value(rpc.params).expect("Fix this easy error");
-            // This is computationally heavy so it goes to a dedicated thread
-            let result = spawn_blocking(move || {
-                let voters_ref = params
-                    .voters
-                    .iter()
-                    .map(|(v, vts)| {
-                        (
-                            v.as_ref(),
-                            vts.iter()
-                                .map(|(to, v)| (to.as_ref(), *v))
-                                .collect::<HashMap<&str, f64>>(),
-                        )
-                    })
-                    .collect();
-                let liq = LiquidDemocracy::new(voters_ref);
-                let (result, influence) = liq.calculate();
-                let r: HashMap<String, f64> =
-                    result.iter().map(|(v, f)| (v.to_string(), *f)).collect();
-                let inf: HashMap<String, f64> =
-                    influence.iter().map(|(u, f)| (u.to_string(), *f)).collect();
-                (r, inf)
-            })
-            .await
-            .unwrap();
+    let calculations = modules.iter().map(|m| {
+        let (_, address) = m;
+        let endpoint = format!("{}/rpc/", address);
+        info!("endpoint: {}", &endpoint);
+        calculate(endpoint, &topic)
+    });
 
-            json!(result)
-        }
-        "frac" => {
-            let params: RPCParamsFormat =
-                serde_json::from_value(rpc.params).expect("Fix this easy error");
-            let voters_ref = params
-                .voters
-                .iter()
-                .map(|(_, vts)| vts.iter().map(|(to, v)| (to.as_ref(), *v)).collect())
-                .collect();
-            let mut frac = FractionalVoting::new(voters_ref);
-            if let Some(b) = params.quadratic {
-                frac.quadratic(b);
-            }
-            if let Some(b) = params.normalize {
-                frac.normalize(b);
-            }
-            json!(frac.calculate())
-        }
-        "borda" => {
-            let params: RPCParamsFormatOrdinal =
-                serde_json::from_value(rpc.params).expect("Fix this easy error");
+    let result: HashMap<String, Value> = join_all(calculations)
+        .await
+        .iter()
+        .filter(|r| r.is_some())
+        .map(|r| r.as_ref().unwrap().to_tuple())
+        .collect();
+    web::Json(result)
+}
 
-            let voter_ref: Vec<Vec<&str>> = params
-                .voters
-                .iter()
-                .map(|(_, votes)| votes.iter().map(|v| v.as_ref()).collect())
-                .collect();
+async fn calculate(address: String, topic: &TopicInfo) -> Option<VoteMethodResult> {
+    let client = Client::new();
 
-            let borda = BordaCount::new(voter_ref);
-            json!(borda.calculate())
-        }
-        _ => {
-            let error = "method not found";
-            let response = JsonRPCResponseError {
-                jsonrpc: "2.0".to_string(),
-                id: rpc.id,
-                error: error.to_string(),
-            };
-            return web::Json(JsonRPCResponse::Error(response));
-        }
-    };
+    let mut response = client
+        .post(address)
+        .header("ContentType", "application/json")
+        .send_json(&topic)
+        .await
+        .unwrap();
 
-    let response = JsonRPCResponseSuccess {
-        jsonrpc: "2.0".to_string(),
-        id: rpc.id,
-        result,
-    };
+    match response.json().await {
+        Ok(r) => Some(r),
+        Err(_) => None,
+    }
+}
 
-    web::Json(JsonRPCResponse::Success(response))
+#[post("module/")]
+async fn add_module(
+    modules: web::Data<ModuleMap>,
+    module: web::Json<(String, String)>,
+) -> impl Responder {
+    let mut modules = modules.lock().unwrap();
+    let (name, uri): (String, String) = module.into_inner();
+    modules.insert(name, uri);
+    web::Json(json!({"status":"ok"}))
+}
+
+#[get("modules/")]
+async fn get_modules(modules: web::Data<ModuleMap>) -> impl Responder {
+    let modules = modules.lock().unwrap();
+    web::Json(json!(*modules))
+}
+
+#[get("hello/")]
+async fn hello() -> impl Responder {
+    "world!"
+}
+
+#[get("dummy/")]
+async fn dummy_info() -> impl Responder {
+    web::Json(TopicInfo::dummy())
 }
