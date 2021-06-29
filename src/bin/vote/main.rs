@@ -24,25 +24,28 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .app_data(modules.clone())
-            .service(hello)
-            .service(api)
-            .service(add_module)
-            .service(get_modules)
-            .service(dummy_info)
+            .service(
+                web::scope("/rpc/")
+                    .service(hello)
+                    .service(api)
+                    .service(add_module)
+                    .service(get_modules)
+                    .service(dummy_info),
+            )
     })
     .bind("0.0.0.0:8100")?
     .run()
     .await
 }
 
-#[post("rpc/")]
+#[post("")]
 async fn api(modules: web::Data<ModuleMap>, topic: web::Json<TopicInfo>) -> impl Responder {
     let topic = topic.into_inner();
     let modules = modules.lock().unwrap();
 
     let calculations = modules.iter().map(|m| {
-        let (_, address) = m;
-        let endpoint = format!("{}/rpc/", address);
+        let (name, address) = m;
+        let endpoint = format!("{}/{}/rpc/", address, name);
         info!("endpoint: {}", &endpoint);
         calculate(endpoint, &topic)
     });
