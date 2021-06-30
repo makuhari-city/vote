@@ -1,99 +1,115 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
-pub type Delegate = (Uuid, String);
-pub type Policy = (Uuid, String);
-pub type Votes = HashMap<Uuid, Vec<(Uuid, f64)>>;
+/// Votes shows how the users votes are handled.
+/// The first Uuid must be one assigned to the `delegates` field,
+/// yet the second one does not restrict it to `polices`
+pub type Votes = BTreeMap<Uuid, BTreeMap<Uuid, f64>>;
 
-// normalizes votes among users votes
-pub fn normalize(votes: &Votes) -> Votes {
-    votes
-        .iter()
-        .map(|(uid, vote)| {
-            let sum = vote.iter().map(|v| v.1).fold(0.0, |a, x| a + x);
-
-            if sum == 0.0 {
-                (uid.to_owned(), vote.to_owned())
-            } else {
-                let normalized = vote
-                    .iter()
-                    .map(|(to, v)| (to.to_owned(), v / sum))
-                    .collect();
-                (uid.to_owned(), normalized)
-            }
-        })
-        .collect()
-}
-
+/// Topic is a high level struct that has comprehensive info about the `topic`.
+/// It has two purposes:
+///   1. a data format that is ready to be used in the front end,
+///   2. a format that is saved in a database
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TopicInfo {
-    pub title: String,
-    pub id: Uuid,
-    pub votes: Votes,
-    pub delegates: Vec<Delegate>,
-    pub policies: Vec<Policy>,
+pub struct Topic {
+    id: Uuid,
+    title: String,
+    description: String,
+    /// This is hash of the previous hash
+    parent: Option<String>,
+    delegates: BTreeMap<Uuid, String>,
+    policies: BTreeMap<Uuid, String>,
+    votes: Votes,
+    results: BTreeMap<String, Value>,
 }
 
-impl TopicInfo {
-    pub fn votes(&self) -> Votes {
-        self.votes.to_owned()
-    }
-
-    pub fn dummy() -> Self {
-        let delegates = vec![
-            (Uuid::new_v4(), "alice".to_string()),
-            (Uuid::new_v4(), "bob".to_string()),
-            (Uuid::new_v4(), "charlie".to_string()),
-        ];
-        let policies = vec![
-            (Uuid::new_v4(), "apples".to_string()),
-            (Uuid::new_v4(), "bananas".to_string()),
-            (Uuid::new_v4(), "orange".to_string()),
-        ];
-        let votes: Votes = vec![
-            (delegates[0].0, vec![(policies[0].0, 1.0)]),
-            (delegates[1].0, vec![(policies[1].0, 1.0)]),
-            (delegates[2].0, vec![(policies[1].0, 1.0)]),
-        ]
-        .into_iter()
-        .collect();
-
+impl Topic {
+    pub fn new(title: &str, description: &str) -> Self {
         Self {
-            title: "topic title".to_string(),
             id: Uuid::new_v4(),
-            votes,
-            delegates,
-            policies,
+            title: title.to_string(),
+            description: description.to_string(),
+            parent: None,
+            delegates: BTreeMap::new(),
+            policies: BTreeMap::new(),
+            votes: BTreeMap::new(),
+            results: BTreeMap::new(),
         }
     }
 
-    pub fn get_id_by_name(&self, name: &str) -> Option<Uuid> {
-        self.delegates
-            .iter()
-            .find(|(_, voter_name)| name == voter_name)
-            .and_then(|(id, _name)| Some(id.to_owned()))
+    pub fn add_new_delegate(&mut self, nickname: &str) -> Option<Uuid> {
+        if self.delegates.iter().any(|(_uid, name)| name == nickname) {
+            None
+        } else {
+            let id = Uuid::new_v4();
+            self.delegates.insert(id.to_owned(), nickname.to_string());
+            Some(id)
+        }
     }
 
-    pub fn get_id_by_title(&self, policy_title: &str) -> Option<Uuid> {
-        self.delegates
-            .iter()
-            .find(|(_, title)| title == policy_title)
-            .and_then(|(id, _)| Some(id.to_owned()))
+    pub fn add_new_policy(&mut self, title: &str) -> Option<Uuid> {
+        if self.policies.iter().any(|(_uid, t)| t == title) {
+            None
+        } else {
+            let id = Uuid::new_v4();
+            self.policies.insert(id.to_owned(), title.to_string());
+            Some(id)
+        }
+    }
+
+    pub fn cast_vote_to(&mut self, src: &Uuid, target: &Uuid, value: f64) {
+        //TODO : check for illegal votes
+        self.votes
+            .get_mut(src)
+            .and_then(|user_votes| user_votes.insert(target.to_owned(), value));
     }
 }
 
-impl TopicInfo {
+/// VoteInfo is a redacted version of `Topic`.
+/// The calculation modules will not need to know the full information about the topic.
+/// This struct strictly defines only the necessary information for aggregating votes.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VoteInfo {
+    /// notice the data format is different from the one in `Topic`
+    delegates: BTreeSet<Uuid>,
+    policies: BTreeSet<Uuid>,
+    votes: Votes,
+}
+
+impl VoteInfo {
+    /// Some aggregation rules requires votes to be normalized.
+    pub fn normalized(&self) -> Votes {
+        self.votes
+            .iter()
+            .map(|(uid, vote)| {
+                let sum = vote.iter().map(|v| v.1).fold(0.0, |a, x| a + x);
+
+                if sum == 0.0 {
+                    (uid.to_owned(), vote.to_owned())
+                } else {
+                    let normalized = vote
+                        .iter()
+                        .map(|(to, v)| (to.to_owned(), v / sum))
+                        .collect();
+                    (uid.to_owned(), normalized)
+                }
+            })
+            .collect()
+    }
+
+    /// Some aggregation rules only needs votes that are casted to policies
     pub fn only_policy_voting(&self) -> Votes {
         self.votes
             .iter()
             .map(|(uid, vote)| {
                 (
                     *uid,
-                    vote.into_iter()
-                        .filter(|(to, _)| !self.delegates.iter().any(|(id, _n)| id == to))
-                        .cloned()
+                    vote.iter()
+                        .filter(|(to, _)| !self.delegates.iter().any(|id| &id == to))
+                        // TODO: why do I have to do this?
+                        .map(|(uuid, value)| (uuid.to_owned(), value.to_owned()))
                         .collect(),
                 )
             })
@@ -101,121 +117,133 @@ impl TopicInfo {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VoteMethodResult {
-    method: String,
-    result: Value,
+/// `Topic` should be convertable to `VoteInfo`s. This will be the information sent to the
+/// calculation modules.
+impl From<Topic> for VoteInfo {
+    fn from(topic: Topic) -> Self {
+        let delegates = topic
+            .delegates
+            .iter()
+            .map(|(uuid, _)| uuid.to_owned())
+            .collect();
+
+        let policies = topic
+            .policies
+            .iter()
+            .map(|(uuid, _)| uuid.to_owned())
+            .collect();
+
+        Self {
+            delegates,
+            policies,
+            votes: topic.votes.to_owned(),
+        }
+    }
 }
 
-impl VoteMethodResult {
-    pub fn to_tuple(&self) -> (String, Value) {
-        (self.method.to_string(), self.result.to_owned())
+impl Topic {
+    pub fn votes(&self) -> Votes {
+        self.votes.to_owned()
+    }
+
+    /// useful for mocking up votes
+    pub fn dummy() -> Self {
+        let mut topic = Topic::new("dummy", "which fruit");
+
+        let alice = topic.add_new_delegate("alice").unwrap();
+        let bob = topic.add_new_delegate("bob").unwrap();
+        let charlie = topic.add_new_delegate("charlie").unwrap();
+
+        let apples = topic.add_new_policy("apples").unwrap();
+        let bananas = topic.add_new_policy("bananas").unwrap();
+        let _oranges = topic.add_new_policy("oranges").unwrap();
+
+        topic.cast_vote_to(&alice, &apples, 1f64);
+        topic.cast_vote_to(&bob, &bananas, 1f64);
+        topic.cast_vote_to(&charlie, &bananas, 1f64);
+
+        topic
+    }
+
+    pub fn get_id_by_name(&self, name: &str) -> Option<Uuid> {
+        self.delegates
+            .iter()
+            .find(|(_, voter_name)| name == *voter_name)
+            .and_then(|(id, _name)| Some(id.to_owned()))
+    }
+
+    pub fn get_id_by_title(&self, title: &str) -> Option<Uuid> {
+        self.delegates
+            .iter()
+            .find(|(_, pt)| title == *pt)
+            .and_then(|(id, _)| Some(id.to_owned()))
     }
 }
 
 #[cfg(test)]
 mod topic_info_test {
 
-    use actix_web::middleware::normalize;
-
     use super::*;
 
     #[test]
     fn normalize_votes_no_change_empty() {
-        let delegates = vec![(Uuid::new_v4(), "alice".to_string())];
+        let mut topic = Topic::new("empty", "");
+        let initial_votes = topic.votes.to_owned();
 
-        let policies = vec![
-            (Uuid::new_v4(), "apple".to_string()),
-            (Uuid::new_v4(), "bananas".to_string()),
-        ];
+        topic.add_new_delegate("alice");
+        topic.add_new_policy("apples");
+        topic.add_new_policy("bananas");
 
-        let votes: Votes = HashMap::new();
+        let info: VoteInfo = topic.into();
 
-        let info = TopicInfo {
-            id: Uuid::new_v4(),
-            title: "normalized".to_string(),
-            votes,
-            policies,
-            delegates,
-        };
+        let normalized = info.normalized();
 
-        let normalized = normalize(&info.votes);
-
-        assert_eq!(info.votes, normalized);
+        assert_eq!(initial_votes, normalized);
     }
 
     #[test]
     fn normalize_votes() {
-        let delegates = vec![(Uuid::new_v4(), "alice".to_string())];
-        let alice = delegates[0].to_owned();
+        let mut topic = Topic::dummy();
 
-        let policies = vec![
-            (Uuid::new_v4(), "apple".to_string()),
-            (Uuid::new_v4(), "bananas".to_string()),
-        ];
+        let alice = topic.get_id_by_name("alice").unwrap();
+        let apples = topic.get_id_by_title("apples").unwrap();
+        let bananas = topic.get_id_by_title("bananas").unwrap();
+        topic.cast_vote_to(&alice, &bananas, 1f64);
 
-        let votes: Votes = vec![(
-            delegates[0].0,
-            vec![(policies[0].0, 1.0), (policies[1].0, 1.0)],
-        )]
-        .into_iter()
-        .collect();
+        let info: VoteInfo = topic.into();
+        let votes = info.normalized();
 
-        let info = TopicInfo {
-            id: Uuid::new_v4(),
-            title: "normalized".to_string(),
-            votes,
-            policies,
-            delegates,
-        };
-
-        let normalized = normalize(&info.votes);
-
-        let alices_vote = normalized.get(&alice.0).unwrap();
-
-        assert_eq!(alices_vote[0].1, 0.5);
-        assert_eq!(alices_vote[0].1, alices_vote[1].1);
+        let alice_votes = votes.get(&alice).unwrap();
+        assert_eq!(alice_votes.get(&apples), alice_votes.get(&bananas));
     }
 
     #[test]
     fn only_policy() {
-        let delegates = vec![
-            (Uuid::new_v4(), "alice".to_string()),
-            (Uuid::new_v4(), "bob".to_string()),
-        ];
+        let mut topic = Topic::dummy();
 
-        let policies = vec![(Uuid::new_v4(), "apple".to_string())];
+        let alice = topic.get_id_by_name("alice").unwrap();
+        let bob = topic.get_id_by_name("bob").unwrap();
 
-        let only_policies: Votes = vec![
-            (
-                delegates[0].0.to_owned(),
-                vec![(policies[0].0.to_owned(), 1.0)],
-            ),
-            (delegates[1].0.to_owned(), vec![]),
-        ]
-        .into_iter()
-        .collect();
+        let alice_vote_len = topic
+            .votes
+            .get(&alice)
+            .unwrap()
+            .keys()
+            .collect::<Vec<&Uuid>>()
+            .len();
 
-        let votes: Votes = vec![
-            (
-                delegates[0].0,
-                vec![(policies[0].0, 1.0), (delegates[1].0, 2.0)],
-            ),
-            (delegates[1].0, vec![(delegates[0].0, 1.0)]),
-        ]
-        .into_iter()
-        .collect();
+        topic.cast_vote_to(&alice, &bob, 1f64);
 
-        let info = TopicInfo {
-            title: "people vote for people".to_string(),
-            id: Uuid::new_v4(),
-            delegates,
-            policies,
-            votes,
-        };
+        let info: VoteInfo = topic.into();
 
-        let stripped = info.only_policy_voting();
+        let stripped = info
+            .only_policy_voting()
+            .get(&alice)
+            .unwrap()
+            .keys()
+            .collect::<Vec<&Uuid>>()
+            .len();
 
-        assert_eq!(stripped, only_policies)
+        assert_eq!(stripped, alice_vote_len);
     }
 }

@@ -1,11 +1,13 @@
+mod rpc;
+
 use actix_cors::Cors;
-use actix_web::{client::Client, get, middleware, post, web, App, HttpServer, Responder};
+use actix_web::{get, middleware, post, web, App, HttpServer, Responder};
 use futures::future::join_all;
-use log::info;
+use rpc::calculate;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use vote::{TopicInfo, VoteMethodResult};
+use vote::{Topic, VoteInfo};
 
 type ModuleMap = Mutex<HashMap<String, String>>;
 
@@ -39,40 +41,28 @@ async fn main() -> std::io::Result<()> {
 }
 
 #[post("")]
-async fn api(modules: web::Data<ModuleMap>, topic: web::Json<TopicInfo>) -> impl Responder {
+async fn api(modules: web::Data<ModuleMap>, topic: web::Json<Topic>) -> impl Responder {
     let topic = topic.into_inner();
+
+    let info: VoteInfo = topic.into();
+
     let modules = modules.lock().unwrap();
 
     let calculations = modules.iter().map(|m| {
         let (name, address) = m;
-        let endpoint = format!("{}/{}/rpc/", address, name);
-        info!("endpoint: {}", &endpoint);
-        calculate(endpoint, &topic)
+        calculate(&address, &name, &info)
     });
 
-    let result: HashMap<String, Value> = join_all(calculations)
-        .await
-        .iter()
-        .filter(|r| r.is_some())
-        .map(|r| r.as_ref().unwrap().to_tuple())
+    let module_responses = join_all(calculations).await;
+
+    let result: HashMap<String, Value> = modules
+        .keys()
+        .zip(module_responses.iter())
+        .filter(|(_, r)| r.is_some())
+        .map(|(k, r)| (k.to_string(), r.to_owned().unwrap()))
         .collect();
+
     web::Json(result)
-}
-
-async fn calculate(address: String, topic: &TopicInfo) -> Option<VoteMethodResult> {
-    let client = Client::new();
-
-    let mut response = client
-        .post(address)
-        .header("ContentType", "application/json")
-        .send_json(&topic)
-        .await
-        .unwrap();
-
-    match response.json().await {
-        Ok(r) => Some(r),
-        Err(_) => None,
-    }
 }
 
 #[post("module/")]
@@ -99,5 +89,5 @@ async fn hello() -> impl Responder {
 
 #[get("dummy/")]
 async fn dummy_info() -> impl Responder {
-    web::Json(TopicInfo::dummy())
+    web::Json(Topic::dummy())
 }
