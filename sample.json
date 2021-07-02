@@ -1,52 +1,17 @@
 {
-  "title": "topic title",
-  "id": "c9d60f62-939b-449d-a93b-92bb89ef8d2e",
-  "votes": {
-    "06a6d870-bff9-4527-91c1-462a1b13caf6": [
-      [
-        "5efe619b-704c-4f96-94d8-87fae06f6032",
-        1
-      ]
-    ],
-    "56dc7553-b13d-4572-aea6-63830db2354a": [
-      [
-        "5cabf1b3-8cbb-4eba-ad0f-20b628bd4893",
-        1
-      ]
-    ],
-    "01fe5eb7-e5aa-47ad-bbf5-72a08318222f": [
-      [
-        "5cabf1b3-8cbb-4eba-ad0f-20b628bd4893",
-        1
-      ]
-    ]
+  "id": "431ff3ba-c451-4ca1-92da-176fe53c2510",
+  "title": "dummy",
+  "description": "which fruit",
+  "delegates": {
+    "9d5a10ac-2cd5-42ec-8d68-8f419a35badd": "alice",
+    "c35daaa4-2654-4982-a67c-7d1d07f2d7b0": "bob",
+    "fa57262c-9d6f-4c04-95b8-ebe320f0f64a": "charlie"
   },
-  "delegates": [
-    [
-      "06a6d870-bff9-4527-91c1-462a1b13caf6",
-      "alice"
-    ],
-    [
-      "56dc7553-b13d-4572-aea6-63830db2354a",
-      "bob"
-    ],
-    [
-      "01fe5eb7-e5aa-47ad-bbf5-72a08318222f",
-      "charlie"
-    ]
-  ],
-  "policies": [
-    [
-      "5efe619b-704c-4f96-94d8-87fae06f6032",
-      "apples"
-    ],
-    [
-      "5cabf1b3-8cbb-4eba-ad0f-20b628bd4893",
-      "bananas"
-    ],
-    [
-      "8f940399-3d0a-4fb4-b11e-fe8491e4e048",
-      "orange"
-    ]
-  ]
+  "policies": {
+    "03fe79d3-44e1-4eef-b852-f2c93580c367": "bananas",
+    "6fc1c4dc-f093-4e00-80ac-8306693bc55b": "oranges",
+    "9282bd3f-db90-4c75-8d68-cc5d80c0cd4c": "apples"
+  },
+  "votes": {},
+  "results": {}
 }

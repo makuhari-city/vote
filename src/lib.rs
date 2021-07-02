@@ -1,5 +1,9 @@
+pub mod rpc;
+
+use futures::future::join3;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -17,12 +21,10 @@ pub struct Topic {
     id: Uuid,
     title: String,
     description: String,
-    /// This is hash of the previous hash
-    parent: Option<String>,
     delegates: BTreeMap<Uuid, String>,
     policies: BTreeMap<Uuid, String>,
     votes: Votes,
-    results: BTreeMap<String, Value>,
+    results: Option<BTreeMap<String, Value>>,
 }
 
 impl Topic {
@@ -31,11 +33,10 @@ impl Topic {
             id: Uuid::new_v4(),
             title: title.to_string(),
             description: description.to_string(),
-            parent: None,
             delegates: BTreeMap::new(),
             policies: BTreeMap::new(),
             votes: BTreeMap::new(),
-            results: BTreeMap::new(),
+            results: None,
         }
     }
 
@@ -62,20 +63,23 @@ impl Topic {
     pub fn cast_vote_to(&mut self, src: &Uuid, target: &Uuid, value: f64) {
         //TODO : check for illegal votes
         self.votes
-            .get_mut(src)
-            .and_then(|user_votes| user_votes.insert(target.to_owned(), value));
+            .entry(src.to_owned())
+            .or_insert(BTreeMap::new())
+            .insert(target.to_owned(), value);
     }
 }
 
 /// VoteInfo is a redacted version of `Topic`.
-/// The calculation modules will not need to know the full information about the topic.
-/// This struct strictly defines only the necessary information for aggregating votes.
+/// The calculation modules will not need to know the full
+/// information about the topic.
+/// This struct strictly defines only the necessary information
+/// for aggregating votes.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VoteInfo {
     /// notice the data format is different from the one in `Topic`
-    delegates: BTreeSet<Uuid>,
-    policies: BTreeSet<Uuid>,
-    votes: Votes,
+    pub delegates: BTreeSet<Uuid>,
+    pub policies: BTreeSet<Uuid>,
+    pub votes: Votes,
 }
 
 impl VoteInfo {
@@ -114,6 +118,46 @@ impl VoteInfo {
                 )
             })
             .collect()
+    }
+
+    /// used to calculate the uniqueness of votes
+    pub async fn hash(&self) -> Vec<u8> {
+        let d_hash = async move {
+            let mut hasher = Sha256::new();
+            for d in self.delegates.to_owned() {
+                hasher.update(&d.as_bytes());
+            }
+            hasher.finalize().as_slice().to_owned()
+        };
+
+        let p_hash = async move {
+            let mut hasher = Sha256::new();
+            for p in self.delegates.to_owned() {
+                hasher.update(&p.as_bytes());
+            }
+            hasher.finalize().as_slice().to_owned()
+        };
+
+        let v_hash = async move {
+            let mut hasher = Sha256::new();
+            for (voter, vote) in self.votes.to_owned() {
+                hasher.update(voter.as_bytes());
+                for (to, value) in vote {
+                    hasher.update(to.as_bytes());
+                    hasher.update(value.to_be_bytes());
+                }
+            }
+            hasher.finalize().as_slice().to_owned()
+        };
+
+        let (delegates, policies, vote) = join3(d_hash, p_hash, v_hash).await;
+
+        let mut hasher = Sha256::new();
+        hasher.update(&delegates.as_slice());
+        hasher.update(&policies.as_slice());
+        hasher.update(&vote.as_slice());
+
+        hasher.finalize().as_slice().to_owned()
     }
 }
 
@@ -173,7 +217,7 @@ impl Topic {
     }
 
     pub fn get_id_by_title(&self, title: &str) -> Option<Uuid> {
-        self.delegates
+        self.policies
             .iter()
             .find(|(_, pt)| title == *pt)
             .and_then(|(id, _)| Some(id.to_owned()))

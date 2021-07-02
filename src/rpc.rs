@@ -1,8 +1,10 @@
+use crate::VoteInfo;
 use actix_web::client::Client;
+use bs58::encode;
 use futures::FutureExt;
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use vote::VoteInfo;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JsonRPCRequest {
@@ -21,6 +23,14 @@ impl JsonRPCRequest {
             params: json!({}),
         }
     }
+
+    pub fn id(&self) -> String {
+        self.id.to_string()
+    }
+
+    pub fn vote_info(&self) -> VoteInfo {
+        serde_json::from_value(self.params.to_owned()).expect("params should be a VoteInfo")
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,17 +42,39 @@ pub struct JsonRPCResponse {
 }
 
 impl JsonRPCResponse {
+    pub fn new(id: &str) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            id: id.to_string(),
+            result: None,
+            error: None,
+        }
+    }
+
     pub fn is_success(&self) -> bool {
         self.result.is_some()
+    }
+
+    pub fn result(&mut self, r: &Value) {
+        self.result = Some(r.to_owned());
+    }
+
+    pub fn error(&mut self, error: &str) {
+        let value: Value = json!(error);
+        self.error = Some(value);
     }
 }
 
 pub async fn calculate(module_name: &str, address: &str, info: &VoteInfo) -> Option<Value> {
     let mut rpc = JsonRPCRequest::new();
+    let hash = &info.hash().await;
     rpc.method = "calculate".to_string();
     rpc.params = json!(info);
+    rpc.id = encode(hash).into_string();
 
     let endpoint = format!("{}/{}/rpc/", &address, &module_name);
+
+    log::info!("{}", &endpoint);
 
     let client = Client::new();
     let data = client

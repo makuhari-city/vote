@@ -49,8 +49,8 @@ async fn api(modules: web::Data<ModuleMap>, topic: web::Json<Topic>) -> impl Res
     let modules = modules.lock().unwrap();
 
     let calculations = modules.iter().map(|m| {
-        let (name, address) = m;
-        calculate(&address, &name, &info)
+        let (name, uri) = m;
+        calculate(&name, &uri, &info)
     });
 
     let module_responses = join_all(calculations).await;
