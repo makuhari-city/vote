@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile
     tty: true 
     ports:
-      - 8103:8103
+      - 8381:8381
     networks:
       - makuhari_city
   liquid: 
@@ -15,7 +15,7 @@ services:
       dockerfile: Dockerfile
     tty: true 
     ports:
-      - 8102:8102
+      - 8281:8281
     networks:
       - makuhari_city
   fptp: 
@@ -24,7 +24,7 @@ services:
       dockerfile: Dockerfile
     tty: true 
     ports:
-      - 8101:8101
+      - 8181:8181
     networks:
       - makuhari_city
   app: 
@@ -33,7 +33,7 @@ services:
       dockerfile: Dockerfile
     tty: true 
     ports:
-      - 8100:8100
+      - 8081:8081
     depends_on:
       - "fptp"
       - "liquid"
