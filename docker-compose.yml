@@ -34,6 +34,10 @@ services:
     tty: true 
     ports:
       - 8100:8100
+    depends_on:
+      - "fptp"
+      - "liquid"
+      - "borda"
     links:
       - "fptp"
       - "liquid"

@@ -1,5 +1,7 @@
 pub mod rpc;
 
+use bs58::encode;
+use futures::executor::block_on;
 use futures::future::join3;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -12,22 +14,21 @@ use uuid::Uuid;
 /// yet the second one does not restrict it to `polices`
 pub type Votes = BTreeMap<Uuid, BTreeMap<Uuid, f64>>;
 
-/// Topic is a high level struct that has comprehensive info about the `topic`.
+/// TopicData is a high level struct that has comprehensive info about the `topic`.
 /// It has two purposes:
 ///   1. a data format that is ready to be used in the front end,
 ///   2. a format that is saved in a database
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Topic {
-    id: Uuid,
-    title: String,
-    description: String,
+pub struct TopicData {
+    pub id: Uuid,
+    pub title: String,
+    pub description: String,
     delegates: BTreeMap<Uuid, String>,
     policies: BTreeMap<Uuid, String>,
     votes: Votes,
-    results: Option<BTreeMap<String, Value>>,
 }
 
-impl Topic {
+impl TopicData {
     pub fn new(title: &str, description: &str) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -36,7 +37,6 @@ impl Topic {
             delegates: BTreeMap::new(),
             policies: BTreeMap::new(),
             votes: BTreeMap::new(),
-            results: None,
         }
     }
 
@@ -50,6 +50,15 @@ impl Topic {
         }
     }
 
+    pub fn add_delegate(&mut self, id: &Uuid, nickname: &str) -> bool {
+        if self.delegates.iter().any(|(uid, _name)| uid == id) {
+            false
+        } else {
+            self.delegates.insert(id.to_owned(), nickname.to_string());
+            true
+        }
+    }
+
     pub fn add_new_policy(&mut self, title: &str) -> Option<Uuid> {
         if self.policies.iter().any(|(_uid, t)| t == title) {
             None
@@ -58,6 +67,10 @@ impl Topic {
             self.policies.insert(id.to_owned(), title.to_string());
             Some(id)
         }
+    }
+
+    pub fn overwrite_vote_for(&mut self, src: Uuid, vote: BTreeMap<Uuid, f64>) {
+        self.votes.insert(src, vote);
     }
 
     pub fn cast_vote_to(&mut self, src: &Uuid, target: &Uuid, value: f64) {
@@ -69,20 +82,20 @@ impl Topic {
     }
 }
 
-/// VoteInfo is a redacted version of `Topic`.
+/// VoteData is a redacted version of `TopicData`.
 /// The calculation modules will not need to know the full
 /// information about the topic.
 /// This struct strictly defines only the necessary information
 /// for aggregating votes.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct VoteInfo {
-    /// notice the data format is different from the one in `Topic`
+pub struct VoteData {
+    /// notice the data format is different from the one in `TopicData`
     pub delegates: BTreeSet<Uuid>,
     pub policies: BTreeSet<Uuid>,
     pub votes: Votes,
 }
 
-impl VoteInfo {
+impl VoteData {
     /// Some aggregation rules requires votes to be normalized.
     pub fn normalized(&self) -> Votes {
         self.votes
@@ -118,6 +131,10 @@ impl VoteInfo {
                 )
             })
             .collect()
+    }
+
+    pub fn hash_sync(&self) -> Vec<u8> {
+        block_on(self.hash())
     }
 
     /// used to calculate the uniqueness of votes
@@ -161,10 +178,10 @@ impl VoteInfo {
     }
 }
 
-/// `Topic` should be convertable to `VoteInfo`s. This will be the information sent to the
+/// `TopicData` should be convertable to `VoteData`s. This will be the information sent to the
 /// calculation modules.
-impl From<Topic> for VoteInfo {
-    fn from(topic: Topic) -> Self {
+impl From<TopicData> for VoteData {
+    fn from(topic: TopicData) -> Self {
         let delegates = topic
             .delegates
             .iter()
@@ -185,14 +202,14 @@ impl From<Topic> for VoteInfo {
     }
 }
 
-impl Topic {
+impl TopicData {
     pub fn votes(&self) -> Votes {
         self.votes.to_owned()
     }
 
     /// useful for mocking up votes
     pub fn dummy() -> Self {
-        let mut topic = Topic::new("dummy", "which fruit");
+        let mut topic = TopicData::new("dummy", "which fruit");
 
         let alice = topic.add_new_delegate("alice").unwrap();
         let bob = topic.add_new_delegate("bob").unwrap();
@@ -231,14 +248,14 @@ mod topic_info_test {
 
     #[test]
     fn normalize_votes_no_change_empty() {
-        let mut topic = Topic::new("empty", "");
+        let mut topic = TopicData::new("empty", "");
         let initial_votes = topic.votes.to_owned();
 
         topic.add_new_delegate("alice");
         topic.add_new_policy("apples");
         topic.add_new_policy("bananas");
 
-        let info: VoteInfo = topic.into();
+        let info: VoteData = topic.into();
 
         let normalized = info.normalized();
 
@@ -247,14 +264,14 @@ mod topic_info_test {
 
     #[test]
     fn normalize_votes() {
-        let mut topic = Topic::dummy();
+        let mut topic = TopicData::dummy();
 
         let alice = topic.get_id_by_name("alice").unwrap();
         let apples = topic.get_id_by_title("apples").unwrap();
         let bananas = topic.get_id_by_title("bananas").unwrap();
         topic.cast_vote_to(&alice, &bananas, 1f64);
 
-        let info: VoteInfo = topic.into();
+        let info: VoteData = topic.into();
         let votes = info.normalized();
 
         let alice_votes = votes.get(&alice).unwrap();
@@ -263,7 +280,7 @@ mod topic_info_test {
 
     #[test]
     fn only_policy() {
-        let mut topic = Topic::dummy();
+        let mut topic = TopicData::dummy();
 
         let alice = topic.get_id_by_name("alice").unwrap();
         let bob = topic.get_id_by_name("bob").unwrap();
@@ -278,7 +295,7 @@ mod topic_info_test {
 
         topic.cast_vote_to(&alice, &bob, 1f64);
 
-        let info: VoteInfo = topic.into();
+        let info: VoteData = topic.into();
 
         let stripped = info
             .only_policy_voting()

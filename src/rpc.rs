@@ -1,4 +1,4 @@
-use crate::VoteInfo;
+use crate::VoteData;
 use actix_web::client::Client;
 use bs58::encode;
 use futures::FutureExt;
@@ -28,8 +28,8 @@ impl JsonRPCRequest {
         self.id.to_string()
     }
 
-    pub fn vote_info(&self) -> VoteInfo {
-        serde_json::from_value(self.params.to_owned()).expect("params should be a VoteInfo")
+    pub fn vote_info(&self) -> VoteData {
+        serde_json::from_value(self.params.to_owned()).expect("params should be a VoteData")
     }
 }
 
@@ -65,7 +65,7 @@ impl JsonRPCResponse {
     }
 }
 
-pub async fn calculate(module_name: &str, address: &str, info: &VoteInfo) -> Option<Value> {
+pub async fn calculate(module_name: &str, address: &str, info: &VoteData) -> Option<Value> {
     let mut rpc = JsonRPCRequest::new();
     let hash = &info.hash().await;
     rpc.method = "calculate".to_string();

@@ -7,7 +7,7 @@ use rpc::calculate;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use vote::{Topic, VoteInfo};
+use vote::{TopicData, VoteData};
 
 type ModuleMap = Mutex<HashMap<String, String>>;
 
@@ -41,10 +41,10 @@ async fn main() -> std::io::Result<()> {
 }
 
 #[post("")]
-async fn api(modules: web::Data<ModuleMap>, topic: web::Json<Topic>) -> impl Responder {
+async fn api(modules: web::Data<ModuleMap>, topic: web::Json<TopicData>) -> impl Responder {
     let topic = topic.into_inner();
 
-    let info: VoteInfo = topic.into();
+    let info: VoteData = topic.into();
 
     let modules = modules.lock().unwrap();
 
@@ -89,5 +89,5 @@ async fn hello() -> impl Responder {
 
 #[get("dummy/")]
 async fn dummy_info() -> impl Responder {
-    web::Json(Topic::dummy())
+    web::Json(TopicData::dummy())
 }
