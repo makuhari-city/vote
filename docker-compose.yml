@@ -1,32 +1,5 @@
 version: "3"
 services: 
-  borda: 
-    build:
-      context: ../em-borda
-      dockerfile: Dockerfile
-    tty: true 
-    ports:
-      - 8381:8381
-    networks:
-      - makuhari_city
-  liquid: 
-    build:
-      context: ../em-liquid
-      dockerfile: Dockerfile
-    tty: true 
-    ports:
-      - 8281:8281
-    networks:
-      - makuhari_city
-  fptp: 
-    build:
-      context: ../em-fptp
-      dockerfile: Dockerfile
-    tty: true 
-    ports:
-      - 8181:8181
-    networks:
-      - makuhari_city
   app: 
     build:
       context: .
@@ -34,14 +7,6 @@ services:
     tty: true 
     ports:
       - 8081:8081
-    depends_on:
-      - "fptp"
-      - "liquid"
-      - "borda"
-    links:
-      - "fptp"
-      - "liquid"
-      - "borda"
     networks:
       - makuhari_city
 networks:
