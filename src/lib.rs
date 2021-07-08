@@ -1,5 +1,6 @@
 pub mod rpc;
 
+use async_trait::async_trait;
 use bs58::encode;
 use futures::executor::block_on;
 use futures::future::join3;
@@ -307,4 +308,9 @@ mod topic_info_test {
 
         assert_eq!(stripped, alice_vote_len);
     }
+}
+
+#[async_trait]
+pub trait AggregationRule {
+    async fn calculate(vote: VoteData) -> Value;
 }
