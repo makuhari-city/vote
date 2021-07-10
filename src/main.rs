@@ -7,9 +7,10 @@ use rpc::calculate;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Mutex;
+use url::Url;
 use vote::{TopicData, VoteData};
 
-type ModuleMap = Mutex<HashMap<String, String>>;
+type ModuleMap = Mutex<HashMap<String, String>>; // name, url
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -72,7 +73,14 @@ async fn add_module(
 ) -> impl Responder {
     let mut modules = modules.lock().unwrap();
     let (name, uri): (String, String) = module.into_inner();
-    modules.insert(name, uri);
+
+    let url = Url::parse(&uri);
+
+    if url.is_err() {
+        return web::Json(json!({"status":"error", "mes":"cannot parse url from string"}));
+    }
+
+    modules.insert(name, url.unwrap().to_string());
     web::Json(json!({"status":"ok"}))
 }
 
