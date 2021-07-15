@@ -60,6 +60,10 @@ impl TopicData {
         }
     }
 
+    pub fn force_add_delegate(&mut self, id: &Uuid, nickname: &str) {
+        self.delegates.insert(id.to_owned(), nickname.to_string());
+    }
+
     pub fn add_new_policy(&mut self, title: &str) -> Option<Uuid> {
         if self.policies.iter().any(|(_uid, t)| t == title) {
             None
