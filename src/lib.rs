@@ -74,7 +74,7 @@ impl TopicData {
         self.votes.insert(src, vote);
     }
 
-    pub fn polices_values(&self) -> BTreeSet<String> {
+    pub fn policies_values(&self) -> BTreeSet<String> {
         self.policies.iter().map(|(_id, v)| v.to_owned()).collect()
     }
 
