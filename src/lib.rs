@@ -74,6 +74,14 @@ impl TopicData {
         self.votes.insert(src, vote);
     }
 
+    pub fn polices_values(&self) -> BTreeSet<String> {
+        self.policies.iter().map(|(_id, v)| v.to_owned()).collect()
+    }
+
+    pub fn delegates_values(&self) -> BTreeSet<String> {
+        self.delegates.iter().map(|(_id, v)| v.to_owned()).collect()
+    }
+
     pub fn cast_vote_to(&mut self, src: &Uuid, target: &Uuid, value: f64) {
         //TODO : check for illegal votes
         self.votes
