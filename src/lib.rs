@@ -146,6 +146,23 @@ impl VoteData {
             .collect()
     }
 
+    /// Some aggregation rules only needs votes that are casted to policies
+    pub fn only_delegate_voting(&self) -> Votes {
+        self.votes
+            .iter()
+            .map(|(uid, vote)| {
+                (
+                    *uid,
+                    vote.iter()
+                        .filter(|(to, _)| !self.policies.iter().any(|id| &id == to))
+                        // TODO: why do I have to do this?
+                        .map(|(uuid, value)| (uuid.to_owned(), value.to_owned()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
     pub fn hash_sync(&self) -> Vec<u8> {
         block_on(self.hash())
     }
